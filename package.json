@@ -1,0 +1,26 @@
+{
+  "name": "ut-ble-manager",
+  "version": "5.1.1",
+  "description": "A BLE module for react native.",
+  "main": "BleManager",
+  "repository": {
+    "type": "git",
+    "url": "https://git.biggersoft.com/yangweijian/ut-ble-manager"
+  },
+  "bugs": {
+    "url": "https://git.biggersoft.com/yangweijian/ut-ble-manager/issues"
+  },
+  "keywords": [
+  	"react-native",
+  	"android",
+    "ios",
+    "ble",
+    "bluetooth",
+    "low energy"
+  ],
+  "license": "Apache-2.0",
+  "author": {
+    "name": "keleibobo",
+    "url": "https://git.biggersoft.com/yangweijian/ut-ble-manager"
+  }
+}
