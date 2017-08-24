@@ -124,7 +124,7 @@ class BleManager extends ReactContextBaseJavaModule implements ActivityEventList
 			Set<BluetoothDevice> bluetoothDevices = mBluetoothAdapter.getBondedDevices();
 			for (BluetoothDevice ble : bluetoothDevices)
 			{
-				if(ble.getName().indexOf("JSQ")>-1)
+				if(ble.getName().indexOf("JSQ")>-1 || ble.getName().indexOf("dxglq")>-1)
 				{
 					try {
 						int bondState = ble.getBondState();
