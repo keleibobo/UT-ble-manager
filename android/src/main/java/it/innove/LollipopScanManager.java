@@ -13,8 +13,7 @@ import android.os.ParcelUuid;
 import android.util.Log;
 import com.facebook.react.bridge.*;
 import org.json.JSONException;
-import android.bluetooth.BluetoothDevice;
-import java.lang.reflect.Method;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -124,6 +123,8 @@ public class LollipopScanManager extends ScanManager {
 
 		@Override
 		public void onScanFailed(final int errorCode) {
+            WritableMap map = Arguments.createMap();
+            bleManager.sendEvent("BleManagerStopScan", map);
 		}
 	};
 }

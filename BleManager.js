@@ -231,6 +231,22 @@ class BleManager  {
       });
     });
   }
+  
+  getBondedPeripherals() {
+    return new Promise((fulfill, reject) => {
+      bleManager.getBondedPeripherals((error, result) => {
+        if (error) {
+          reject(error);
+        } else {
+          if (result != null) {
+            fulfill(result);
+          } else {
+            fulfill([]);
+          }
+        }
+      });
+    });
+  }
 
   removePeripheral(peripheralId) {
     return new Promise((fulfill, reject) => {
