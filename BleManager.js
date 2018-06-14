@@ -231,22 +231,7 @@ class BleManager  {
       });
     });
   }
-  
-  getBondedPeripherals() {
-    return new Promise((fulfill, reject) => {
-      bleManager.getBondedPeripherals((error, result) => {
-        if (error) {
-          reject(error);
-        } else {
-          if (result != null) {
-            fulfill(result);
-          } else {
-            fulfill([]);
-          }
-        }
-      });
-    });
-  }
+
 
   removePeripheral(peripheralId) {
     return new Promise((fulfill, reject) => {
@@ -268,6 +253,74 @@ class BleManager  {
         return false;
       }
     });
+  }
+
+  /**
+   * 建立配对
+   * @param {String} peripheralId 外围设备id
+   */
+  createBond (peripheralId) {
+    return new Promise((fulfill, reject) => {
+      bleManager.createBond(peripheralId, (error) => {
+        if (error) {
+          reject(error)
+        } else {
+          fulfill()
+        }
+      })
+    })
+  }
+
+  /**
+   * 移除配对
+   * @param {String} peripheralId 外围设备id
+   */
+  removeBond (peripheralId) {
+    return new Promise((fulfill, reject) => {
+      bleManager.removeBond(peripheralId, (error) => {
+        if (error) {
+          reject(error)
+        } else {
+          fulfill()
+        }
+      })
+    })
+  }
+
+  /**
+   * 获取已配对的设备
+   */
+  getBondedPeripherals () {
+    return new Promise((fulfill, reject) => {
+      bleManager.getBondedPeripherals((error, result) => {
+        if (error) {
+          reject(error)
+        } else {
+        if (result != null) {
+          fulfill(result)
+        } else {
+          fulfill([])
+          }
+        }
+      })
+    })
+  }
+
+  /**
+   * 请求修改MTU
+   * @param {String} peripheralId 外围设备id
+   * * @param {Number} dataSize 数据包大小
+   */
+  requestMTU (peripheralId, mtu) {
+    return new Promise((fulfill, reject) => {
+      bleManager.requestMTU(peripheralId, mtu, (error) => {
+        if (error) {
+          reject(error)
+        } else {
+          fulfill()
+        }
+      })
+    })
   }
 }
 
