@@ -1,5 +1,6 @@
 package it.innove;
 
+import android.annotation.TargetApi;
 import android.app.Activity;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
@@ -7,7 +8,12 @@ import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
+import android.bluetooth.le.ScanRecord;
+import android.content.Context;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.ParcelUuid;
 import android.support.annotation.Nullable;
 import android.util.Base64;
 import android.util.Log;
@@ -23,127 +29,182 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import org.json.JSONArray;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
 
 import static android.os.Build.VERSION_CODES.LOLLIPOP;
+import static com.facebook.react.common.ReactConstants.TAG;
 
 /**
  * Peripheral wraps the BluetoothDevice and provides methods to convert to JSON.
  */
 public class Peripheral extends BluetoothGattCallback {
 
-	private static final String CHARACTERISTIC_NOTIFICATION_CONFIG = "00002902-0000-1000-8000-00805f9b34fb";
-	public static final String LOG_TAG = "logs";
+    private static final String CHARACTERISTIC_NOTIFICATION_CONFIG = "00002902-0000-1000-8000-00805f9b34fb";
 
-	private final BluetoothDevice device;
-	private byte[] advertisingData;
-	private int advertisingRSSI;
-	private boolean connected = false;
-	private ReactContext reactContext;
+    private final BluetoothDevice device;
+    private ScanRecord advertisingData;
+    private byte[] advertisingDataBytes;
+    private int advertisingRSSI;
+    private boolean connected = false;
+    private ReactContext reactContext;
 
-	private BluetoothGatt gatt;
+    private BluetoothGatt gatt;
 
-	private Callback connectCallback;
-	private Callback retrieveServicesCallback;
-	private Callback readCallback;
-	private Callback readRSSICallback;
-	private Callback writeCallback;
-	private Callback registerNotifyCallback;
-	private Callback requestMTUCallback;
+    private Callback connectCallback;
+    private Callback retrieveServicesCallback;
+    private Callback readCallback;
+    private Callback readRSSICallback;
+    private Callback writeCallback;
+    private Callback registerNotifyCallback;
+    private Callback requestMTUCallback;
 
-	private List<byte[]> writeQueue = new ArrayList<>();
+    private List<byte[]> writeQueue = new ArrayList<>();
 
-	public Peripheral(BluetoothDevice device, int advertisingRSSI, byte[] scanRecord, ReactContext reactContext) {
+    public Peripheral(BluetoothDevice device, int advertisingRSSI, byte[] scanRecord, ReactContext reactContext) {
+        this.device = device;
+        this.advertisingRSSI = advertisingRSSI;
+        this.advertisingDataBytes = scanRecord;
+        this.reactContext = reactContext;
+    }
 
-		this.device = device;
-		this.advertisingRSSI = advertisingRSSI;
-		this.advertisingData = scanRecord;
-		this.reactContext = reactContext;
+    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
+    public Peripheral(BluetoothDevice device, int advertisingRSSI, ScanRecord scanRecord, ReactContext reactContext) {
+        this.device = device;
+        this.advertisingRSSI = advertisingRSSI;
+        this.advertisingData = scanRecord;
+        this.advertisingDataBytes = scanRecord.getBytes();
+        this.reactContext = reactContext;
+    }
 
-	}
+    public Peripheral(BluetoothDevice device, ReactContext reactContext) {
+        this.device = device;
+        this.reactContext = reactContext;
+    }
 
-	public Peripheral(BluetoothDevice device, ReactContext reactContext) {
-		this.device = device;
-		this.reactContext = reactContext;
-	}
+    private void sendEvent(String eventName, @Nullable WritableMap params) {
+        reactContext
+                .getJSModule(RCTNativeAppEventEmitter.class)
+                .emit(eventName, params);
+    }
 
-	private void sendEvent(String eventName, @Nullable WritableMap params) {
-		reactContext
-				.getJSModule(RCTNativeAppEventEmitter.class)
-				.emit(eventName, params);
-	}
+    private void sendConnectionEvent(BluetoothDevice device, String eventName) {
+        WritableMap map = Arguments.createMap();
+        map.putString("peripheral", device.getAddress());
+        sendEvent(eventName, map);
+        Log.d(BleManager.LOG_TAG, "Peripheral event (" + eventName + "):" + device.getAddress());
+    }
 
-	private void sendConnectionEvent(BluetoothDevice device, String eventName) {
-		WritableMap map = Arguments.createMap();
-		map.putString("peripheral", device.getAddress());
-		sendEvent(eventName, map);
-		Log.d(LOG_TAG, "Peripheral event (" + eventName + "):" + device.getAddress());
-	}
+    public void connect(Callback callback, Activity activity) {
+        if (!connected) {
+            BluetoothDevice device = getDevice();
+            this.connectCallback = callback;
 
-	public void connect(Callback callback, Activity activity) {
-		if (!connected) {
-			BluetoothDevice device = getDevice();
-			this.connectCallback = callback;
-      try {
-        int bondState = device.getBondState();
-        if(bondState == BluetoothDevice.BOND_NONE && (device.getName().toLowerCase().indexOf("jsq")>-1 || device.getName().indexOf("解锁")>-1))
-        {
-          Method method = BluetoothDevice.class.getMethod("createBond");
-          method.invoke(device);
-          Thread.sleep(500);
+            try {
+                int bondState = device.getBondState();
+                if (bondState == BluetoothDevice.BOND_NONE && (device.getName().toLowerCase().indexOf("jsq") > -1 || device.getName().indexOf("解锁") > -1)) {
+                    Method method = BluetoothDevice.class.getMethod("createBond");
+                    method.invoke(device);
+                    Thread.sleep(500);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                Log.d(BleManager.LOG_TAG, " Is Or Greater than M $mBluetoothDevice");
+                gatt = device.connectGatt(activity, false, this, BluetoothDevice.TRANSPORT_LE);
+            } else {
+                Log.d(BleManager.LOG_TAG, " Less than M");
+                try {
+                    Log.d(BleManager.LOG_TAG, " Trying TRANPORT LE with reflection");
+                    Method m = device.getClass().getDeclaredMethod("connectGatt", Context.class, Boolean.class, BluetoothGattCallback.class, Integer.class);
+                    m.setAccessible(true);
+                    Integer transport = device.getClass().getDeclaredField("TRANSPORT_LE").getInt(null);
+                    m.invoke(device, activity, false, this, transport);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    Log.d(TAG, " Catch to call normal connection");
+                    device.connectGatt(activity, false,
+                            this);
+                }
+            }
+            onConnectionStateChange(gatt, 0, BluetoothGatt.STATE_CONNECTED);
+
+        } else {
+            if (gatt != null) {
+                callback.invoke();
+            } else {
+                callback.invoke("BluetoothGatt is null");
+            }
         }
-      } catch (Exception e){
-        e.printStackTrace();
-      }
+    }
 
-			gatt = device.connectGatt(activity, false, this);
-		} else {
-			if (gatt != null) {
-				callback.invoke();
-			} else {
-				callback.invoke("BluetoothGatt is null");
-			}
-		}
-	}
-
-	public void disconnect() {
-		connectCallback = null;
-		connected = false;
-		if (gatt != null) {
-			try {
-				gatt.disconnect();
-				gatt.close();
-        try {
-          int bondState = device.getBondState();
-          if(bondState == BluetoothDevice.BOND_BONDED && (device.getName().toLowerCase().indexOf("jsq")>-1 || device.getName().indexOf("解锁")>-1))
-          {
-            Method method = BluetoothDevice.class.getMethod("removeBond");
-            method.invoke(device);
-          }
-        } catch (Exception e){
-          e.printStackTrace();
-        }
+    public void disconnect() {
+        connectCallback = null;
+        connected = false;
+        if (gatt != null) {
+            try {
+                gatt.disconnect();
+                gatt.close();
+                try {
+                    int bondState = device.getBondState();
+                    if (bondState == BluetoothDevice.BOND_BONDED && (device.getName().toLowerCase().indexOf("jsq") > -1 || device.getName().indexOf("解锁") > -1)) {
+                        Method method = BluetoothDevice.class.getMethod("removeBond");
+                        method.invoke(device);
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
 				gatt = null;
-				Log.d(LOG_TAG, "Disconnect");
+				Log.d(BleManager.LOG_TAG, "Disconnect");
 				sendConnectionEvent(device, "BleManagerDisconnectPeripheral");
 			} catch (Exception e) {
 				sendConnectionEvent(device, "BleManagerDisconnectPeripheral");
-				Log.d(LOG_TAG, "Error on disconnect", e);
+				Log.d(BleManager.LOG_TAG, "Error on disconnect", e);
 			}
 		} else
-			Log.d(LOG_TAG, "GATT is null");
+			Log.d(BleManager.LOG_TAG, "GATT is null");
 	}
 
 	public WritableMap asWritableMap() {
-
 		WritableMap map = Arguments.createMap();
+		WritableMap advertising = Arguments.createMap();
 
 		try {
 			map.putString("name", device.getName());
 			map.putString("id", device.getAddress()); // mac address
-			map.putMap("advertising", byteArrayToWritableMap(advertisingData));
 			map.putInt("rssi", advertisingRSSI);
+
+			if (advertisingData != null)
+				advertising.putString("localName", advertisingData.getDeviceName().replace("\0", ""));
+			else
+				advertising.putString("localName", device.getName());
+
+			advertising.putMap("manufacturerData", byteArrayToWritableMap(advertisingDataBytes));
+			advertising.putBoolean("isConnectable", true);
+
+			if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && advertisingData != null) {
+				WritableArray serviceUuids = Arguments.createArray();
+				if (advertisingData.getServiceUuids() != null && advertisingData.getServiceUuids().size() != 0) {
+					for (ParcelUuid uuid : advertisingData.getServiceUuids()) {
+						serviceUuids.pushString(UUIDHelper.uuidToString(uuid.getUuid()));
+					}
+				}
+				advertising.putArray("serviceUuids", serviceUuids);
+
+				WritableMap serviceData = Arguments.createMap();
+				if (advertisingData.getServiceData() != null) {
+					for (Map.Entry<ParcelUuid, byte[]> entry : advertisingData.getServiceData().entrySet()) {
+						serviceData.putMap(UUIDHelper.uuidToString(((ParcelUuid) entry.getKey()).getUuid()), byteArrayToWritableMap((byte[]) entry.getValue()));
+					}
+				}
+
+				advertising.putInt("txPowerLevel", advertisingData.getTxPowerLevel());
+			}
+
+			map.putMap("advertising", advertising);
 		} catch (Exception e) { // this shouldn't happen
 			e.printStackTrace();
 		}
@@ -250,20 +311,32 @@ public class Peripheral extends BluetoothGattCallback {
 	}
 
 	@Override
-	public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
+	public void onConnectionStateChange(BluetoothGatt gatta, int status, int newState) {
 
-		Log.d(LOG_TAG, "onConnectionStateChange to " + newState + " on peripheral: " + device.getAddress() + " with status" + status);
+		Log.d(BleManager.LOG_TAG, "onConnectionStateChange to " + newState + " on peripheral: " + device.getAddress() + " with status" + status);
 
-		this.gatt = gatt;
+		this.gatt = gatta;
 
 		if (newState == BluetoothGatt.STATE_CONNECTED) {
 
 			connected = true;
 
+			new Handler(Looper.getMainLooper()).post(new Runnable() {
+				@Override
+				public void run() {
+					try {
+						gatt.discoverServices();
+					}
+					catch (NullPointerException e) {
+						Log.d(BleManager.LOG_TAG, "onConnectionStateChange connected but gatt of Run method was null");
+					}
+				}
+			});
+
 			sendConnectionEvent(device, "BleManagerConnectPeripheral");
 
 			if (connectCallback != null) {
-				Log.d(LOG_TAG, "Connected to: " + device.getAddress());
+				Log.d(BleManager.LOG_TAG, "Connected to: " + device.getAddress());
 				connectCallback.invoke();
 				connectCallback = null;
 			}
@@ -306,7 +379,11 @@ public class Peripheral extends BluetoothGattCallback {
 	}
 
 	public void updateData(byte[] data) {
-		advertisingData = data;
+		advertisingDataBytes = data;
+	}
+
+	public void updateData(ScanRecord scanRecord) {
+		advertisingData = scanRecord;
 	}
 
 	public int unsignedToBytes(byte b) {
@@ -318,7 +395,7 @@ public class Peripheral extends BluetoothGattCallback {
 		super.onCharacteristicChanged(gatt, characteristic);
 
 		byte[] dataValue = characteristic.getValue();
-		Log.d(LOG_TAG, "Read: " + BleManager.bytesToHex(dataValue) + " from peripheral: " + device.getAddress());
+		Log.d(BleManager.LOG_TAG, "Read: " + BleManager.bytesToHex(dataValue) + " from peripheral: " + device.getAddress());
 
 		WritableMap map = Arguments.createMap();
 		map.putString("peripheral", device.getAddress());
@@ -331,7 +408,7 @@ public class Peripheral extends BluetoothGattCallback {
 	@Override
 	public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
 		super.onCharacteristicRead(gatt, characteristic, status);
-		Log.d(LOG_TAG, "onCharacteristicRead " + characteristic);
+		Log.d(BleManager.LOG_TAG, "onCharacteristicRead " + characteristic);
 
 		if (readCallback != null) {
 
@@ -365,14 +442,14 @@ public class Peripheral extends BluetoothGattCallback {
 				if (status == BluetoothGatt.GATT_SUCCESS) {
 					writeCallback.invoke();
 				} else {
-					Log.e(LOG_TAG, "Error onCharacteristicWrite:" + status);
+					Log.e(BleManager.LOG_TAG, "Error onCharacteristicWrite:" + status);
 					writeCallback.invoke("Error writing status: " + status);
 				}
 
 				writeCallback = null;
 			}
 		} else {
-			Log.e(LOG_TAG, "No callback on write");
+			Log.e(BleManager.LOG_TAG, "No callback on write");
 		}
 	}
 
@@ -410,7 +487,7 @@ public class Peripheral extends BluetoothGattCallback {
 			callback.invoke("Device is not connected", null);
 			return;
 		}
-		Log.d(LOG_TAG, "setNotify");
+		Log.d(BleManager.LOG_TAG, "setNotify");
 
 		if (gatt == null) {
 			callback.invoke("BluetoothGatt is null");
@@ -428,24 +505,24 @@ public class Peripheral extends BluetoothGattCallback {
 
 					// Prefer notify over indicate
 					if ((characteristic.getProperties() & BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0) {
-						Log.d(LOG_TAG, "Characteristic " + characteristicUUID + " set NOTIFY");
+						Log.d(BleManager.LOG_TAG, "Characteristic " + characteristicUUID + " set NOTIFY");
 						descriptor.setValue(notify ? BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE : BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE);
 					} else if ((characteristic.getProperties() & BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0) {
-						Log.d(LOG_TAG, "Characteristic " + characteristicUUID + " set INDICATE");
+						Log.d(BleManager.LOG_TAG, "Characteristic " + characteristicUUID + " set INDICATE");
 						descriptor.setValue(notify ? BluetoothGattDescriptor.ENABLE_INDICATION_VALUE : BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE);
 					} else {
-						Log.d(LOG_TAG, "Characteristic " + characteristicUUID + " does not have NOTIFY or INDICATE property set");
+						Log.d(BleManager.LOG_TAG, "Characteristic " + characteristicUUID + " does not have NOTIFY or INDICATE property set");
 					}
 
 					try {
 						if (gatt.writeDescriptor(descriptor)) {
-							Log.d(LOG_TAG, "setNotify complete");
+							Log.d(BleManager.LOG_TAG, "setNotify complete");
 							registerNotifyCallback = callback;
 						} else {
 							callback.invoke("Failed to set client characteristic notification for " + characteristicUUID);
 						}
 					} catch (Exception e) {
-						Log.d(LOG_TAG, "Error on setNotify", e);
+						Log.d(BleManager.LOG_TAG, "Error on setNotify", e);
 						callback.invoke("Failed to set client characteristic notification for " + characteristicUUID + ", error: " + e.getMessage());
 					}
 
@@ -464,12 +541,12 @@ public class Peripheral extends BluetoothGattCallback {
 	}
 
 	public void registerNotify(UUID serviceUUID, UUID characteristicUUID, Callback callback) {
-		Log.d(LOG_TAG, "registerNotify");
+		Log.d(BleManager.LOG_TAG, "registerNotify");
 		this.setNotify(serviceUUID, characteristicUUID, true, callback);
 	}
 
 	public void removeNotify(UUID serviceUUID, UUID characteristicUUID, Callback callback) {
-		Log.d(LOG_TAG, "removeNotify");
+		Log.d(BleManager.LOG_TAG, "removeNotify");
 		this.setNotify(serviceUUID, characteristicUUID, false, callback);
 	}
 
@@ -497,7 +574,7 @@ public class Peripheral extends BluetoothGattCallback {
 			// As a last resort, try and find ANY characteristic with this UUID, even if it doesn't have the correct properties
 			return service.getCharacteristic(characteristicUUID);
 		} catch (Exception e) {
-			Log.e(LOG_TAG, "Errore su caratteristica " + characteristicUUID, e);
+			Log.e(BleManager.LOG_TAG, "Errore su caratteristica " + characteristicUUID, e);
 			return null;
 		}
 	}
@@ -545,6 +622,23 @@ public class Peripheral extends BluetoothGattCallback {
 		}
 	}
 
+	public void refreshCache(Callback callback) {
+        try {
+            Method localMethod = gatt.getClass().getMethod("refresh", new Class[0]);
+            if (localMethod != null) {
+                boolean res = ((Boolean) localMethod.invoke(gatt, new Object[0])).booleanValue();
+                callback.invoke(null, res);
+            } else {
+                callback.invoke("Could not refresh cache for device.");
+            }
+        }
+        catch (Exception localException) {
+            Log.e(TAG, "An exception occured while refreshing device");
+            callback.invoke(localException.getMessage());
+        }
+
+    }
+
 	public void retrieveServices(Callback callback) {
 		if (!isConnected()) {
 			callback.invoke("Device is not connected", null);
@@ -555,7 +649,6 @@ public class Peripheral extends BluetoothGattCallback {
 			return;
 		}
 		this.retrieveServicesCallback = callback;
-
 		gatt.discoverServices();
 	}
 
@@ -586,7 +679,7 @@ public class Peripheral extends BluetoothGattCallback {
 		characteristic.setValue(data);
 
 		if (!gatt.writeCharacteristic(characteristic)) {
-			Log.d(LOG_TAG, "Error on doWrite");
+			Log.d(BleManager.LOG_TAG, "Error on doWrite");
 			return false;
 		}
 		return true;
@@ -676,7 +769,7 @@ public class Peripheral extends BluetoothGattCallback {
 							}
 						}
 					} else if (doWrite(characteristic, data)) {
-						Log.d(LOG_TAG, "Write completed");
+						Log.d(BleManager.LOG_TAG, "Write completed");
 						if (BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE == writeType) {
 							callback.invoke();
 						}
@@ -686,6 +779,20 @@ public class Peripheral extends BluetoothGattCallback {
 					}
 				}
 			}
+		}
+	}
+
+	public void requestConnectionPriority(int connectionPriority, Callback callback) {
+		if (gatt == null) {
+			callback.invoke("BluetoothGatt is null", null);
+			return;
+		}
+
+		if (Build.VERSION.SDK_INT >= LOLLIPOP) {
+			boolean status = gatt.requestConnectionPriority(connectionPriority);
+			callback.invoke(null, status);
+		} else {
+			callback.invoke("Requesting connection priority requires at least API level 21", null);
 		}
 	}
 
@@ -704,7 +811,7 @@ public class Peripheral extends BluetoothGattCallback {
 			requestMTUCallback = callback;
 			gatt.requestMtu(mtu);
 		} else {
-			callback.invoke("The requestMTU require at least 21 API level", null);
+			callback.invoke("Requesting MTU requires at least API level 21", null);
 		}
 	}
 
@@ -715,7 +822,7 @@ public class Peripheral extends BluetoothGattCallback {
 			if (status == BluetoothGatt.GATT_SUCCESS) {
 				requestMTUCallback.invoke(null, mtu);
 			} else {
-				requestMTUCallback.invoke("Error requesting MTU status=" + status, null);
+				requestMTUCallback.invoke("Error requesting MTU status = " + status, null);
 			}
 
 			requestMTUCallback = null;
@@ -742,17 +849,17 @@ public class Peripheral extends BluetoothGattCallback {
 			// As a last resort, try and find ANY characteristic with this UUID, even if it doesn't have the correct properties
 			return service.getCharacteristic(characteristicUUID);
 		} catch (Exception e) {
-			Log.e(LOG_TAG, "Error on findWritableCharacteristic", e);
-			return null;
-		}
-	}
+			Log.e(BleManager.LOG_TAG, "Error on findWritableCharacteristic", e);
+            return null;
+        }
+    }
 
-	private String generateHashKey(BluetoothGattCharacteristic characteristic) {
-		return generateHashKey(characteristic.getService().getUuid(), characteristic);
-	}
+    private String generateHashKey(BluetoothGattCharacteristic characteristic) {
+        return generateHashKey(characteristic.getService().getUuid(), characteristic);
+    }
 
-	private String generateHashKey(UUID serviceUUID, BluetoothGattCharacteristic characteristic) {
-		return String.valueOf(serviceUUID) + "|" + characteristic.getUuid() + "|" + characteristic.getInstanceId();
-	}
+    private String generateHashKey(UUID serviceUUID, BluetoothGattCharacteristic characteristic) {
+        return String.valueOf(serviceUUID) + "|" + characteristic.getUuid() + "|" + characteristic.getInstanceId();
+    }
 
 }

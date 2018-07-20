@@ -32,6 +32,18 @@ class BleManager  {
     });
   }
 
+  refreshCache(peripheralId) {
+    return new Promise((fulfill, reject) => {
+      bleManager.refreshCache(peripheralId, (error, result) => {
+        if (error) {
+          reject(error);
+        } else {
+          fulfill(result);
+        }
+      });
+    });
+  }
+
   retrieveServices(peripheralId) {
     return new Promise((fulfill, reject) => {
       bleManager.retrieveServices(peripheralId, (error, peripheral) => {
@@ -64,7 +76,7 @@ class BleManager  {
       maxByteSize = 20;
     }
     if (queueSleepTime == null) {
-      queueSleepTime = 10
+      queueSleepTime = 10;
     }
     return new Promise((fulfill, reject) => {
       bleManager.writeWithoutResponse(peripheralId, serviceUUID, characteristicUUID, data, maxByteSize, queueSleepTime, (error) => {
@@ -80,6 +92,30 @@ class BleManager  {
   connect(peripheralId) {
     return new Promise((fulfill, reject) => {
       bleManager.connect(peripheralId, (error) => {
+        if (error) {
+          reject(error);
+        } else {
+          fulfill();
+        }
+      });
+    });
+  }
+
+  createBond(peripheralId) {
+    return new Promise((fulfill, reject) => {
+      bleManager.createBond(peripheralId, (error) => {
+        if (error) {
+          reject(error);
+        } else {
+          fulfill();
+        }
+      });
+    });
+  }
+
+  removeBond(peripheralId) {
+    return new Promise((fulfill, reject) => {
+      bleManager.removeBond(peripheralId, (error) => {
         if (error) {
           reject(error);
         } else {
@@ -152,18 +188,18 @@ class BleManager  {
 
       // (ANDROID) Match as many advertisement per filter as hw could allow
       // dependes on current capability and availability of the resources in hw.
-      if(scanningOptions.numberOfMatches == null){
-          scanningOptions.numberOfMatches = 3
+      if (scanningOptions.numberOfMatches == null) {
+        scanningOptions.numberOfMatches = 3;
       }
 
-      //(ANDROID) Defaults to MATCH_MODE_AGGRESSIVE
-      if(scanningOptions.matchMode == null){
-          scanningOptions.matchMode = 1
+      // (ANDROID) Defaults to MATCH_MODE_AGGRESSIVE
+      if (scanningOptions.matchMode == null) {
+        scanningOptions.matchMode = 1;
       }
 
-      //(ANDROID) Defaults to SCAN_MODE_LOW_POWER on android
-      if(scanningOptions.scanMode == null){
-          scanningOptions.scanMode = 0;
+      // (ANDROID) Defaults to SCAN_MODE_LOW_POWER on android
+      if (scanningOptions.scanMode == null) {
+        scanningOptions.scanMode = 0;
       }
 
       bleManager.scan(serviceUUIDs, seconds, allowDuplicates, scanningOptions, (error) => {
@@ -216,6 +252,22 @@ class BleManager  {
     });
   }
 
+  getBondedPeripherals() {
+    return new Promise((fulfill, reject) => {
+      bleManager.getBondedPeripherals((error, result) => {
+        if (error) {
+          reject(error);
+        } else {
+          if (result != null) {
+            fulfill(result);
+          } else {
+            fulfill([]);
+          }
+        }
+      });
+    });
+  }
+
   getDiscoveredPeripherals() {
     return new Promise((fulfill, reject) => {
       bleManager.getDiscoveredPeripherals((error, result) => {
@@ -231,7 +283,6 @@ class BleManager  {
       });
     });
   }
-
 
   removePeripheral(peripheralId) {
     return new Promise((fulfill, reject) => {
@@ -255,72 +306,28 @@ class BleManager  {
     });
   }
 
-  /**
-   * 建立配对
-   * @param {String} peripheralId 外围设备id
-   */
-  createBond (peripheralId) {
+  requestConnectionPriority(peripheralId, connectionPriority) {
     return new Promise((fulfill, reject) => {
-      bleManager.createBond(peripheralId, (error) => {
+      bleManager.requestConnectionPriority(peripheralId, connectionPriority, (error, status) => {
         if (error) {
-          reject(error)
+          reject(error);
         } else {
-          fulfill()
+          fulfill(status);
         }
-      })
-    })
+      });
+    });
   }
 
-  /**
-   * 移除配对
-   * @param {String} peripheralId 外围设备id
-   */
-  removeBond (peripheralId) {
+  requestMTU(peripheralId, mtu) {
     return new Promise((fulfill, reject) => {
-      bleManager.removeBond(peripheralId, (error) => {
+      bleManager.requestMTU(peripheralId, mtu, (error, mtu) => {
         if (error) {
-          reject(error)
+          reject(error);
         } else {
-          fulfill()
+          fulfill(mtu);
         }
-      })
-    })
-  }
-
-  /**
-   * 获取已配对的设备
-   */
-  getBondedPeripherals () {
-    return new Promise((fulfill, reject) => {
-      bleManager.getBondedPeripherals((error, result) => {
-        if (error) {
-          reject(error)
-        } else {
-        if (result != null) {
-          fulfill(result)
-        } else {
-          fulfill([])
-          }
-        }
-      })
-    })
-  }
-
-  /**
-   * 请求修改MTU
-   * @param {String} peripheralId 外围设备id
-   * * @param {Number} dataSize 数据包大小
-   */
-  requestMTU (peripheralId, mtu) {
-    return new Promise((fulfill, reject) => {
-      bleManager.requestMTU(peripheralId, mtu, (error) => {
-        if (error) {
-          reject(error)
-        } else {
-          fulfill()
-        }
-      })
-    })
+      });
+    });
   }
 }
 
