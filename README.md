@@ -44,7 +44,7 @@ android {
 
     defaultConfig {
         ...
-        minSdkVersion 18 // <--- make sure this is 18 or greater
+        minSdkVersion 19 // <--- make sure this is 19 or greater
         ...
     }
     ...
@@ -663,10 +663,10 @@ bleManagerEmitter.addListener(
 A characteristic notify a new value.
 
 __Arguments__
-- `value` ¡ª `Array` ¡ª the read value
-- `peripheral` ¡ª `String` ¡ª the id of the peripheral
-- `characteristic` ¡ª `String` ¡ª the UUID of the characteristic
-- `service` ¡ª `String` ¡ª the UUID of the characteristic
+- `value` â€” `Array` â€” the read value
+- `peripheral` â€” `String` â€” the id of the peripheral
+- `characteristic` â€” `String` â€” the UUID of the characteristic
+- `service` â€” `String` â€” the UUID of the characteristic
 
 > Event will only be emitted after successful `startNotification`.
 
