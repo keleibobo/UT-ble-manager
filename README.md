@@ -44,7 +44,7 @@ android {
 
     defaultConfig {
         ...
-        minSdkVersion 18 // <--- make sure this is 18 or greater
+        minSdkVersion 19 // <--- make sure this is 19 or greater
         ...
     }
     ...
@@ -126,11 +126,27 @@ public class MainApplication extends Application implements ReactApplication {
 - Android API >= 23 require the ACCESS_COARSE_LOCATION permission to scan for peripherals. React Native >= 0.33 natively support PermissionsAndroid like in the example.
 - Before write, read or start notification you need to call `retrieveServices` method
 
+## Example
+The easiest way to test is simple make your AppRegistry point to our example component, like this:
+```javascript
+// in your index.ios.js or index.android.js
+import React, { Component } from 'react';
+import {
+  AppRegistry,
+} from 'react-native';
+import App from 'react-native-ble-manager/example/App' //<-- simply point to the example js!
+
+AppRegistry.registerComponent('MyAwesomeApp', () => App);
+```
+
+Or, you can still look into the whole [example](https://github.com/innoveit/react-native-ble-manager/tree/master/example) folder for a standalone project.
+
 ## Methods
 
 ### start(options)
 Init the module.
 Returns a `Promise` object.
+Don't call this multiple times.
 
 __Arguments__
 - `options` - `JSON`
@@ -192,6 +208,8 @@ BleManager.stopScan()
 Attempts to connect to a peripheral. In many case if you can't connect you have to scan for the peripheral before.
 Returns a `Promise` object.
 
+> In iOS, attempts to connect to a peripheral do not time out (please see [Apple's doc](https://developer.apple.com/documentation/corebluetooth/cbcentralmanager/1518766-connect)), so you might need to set a timer explicitly if you don't want this behavior.
+
 __Arguments__
 - `peripheralId` - `String` - the id/mac address of the peripheral to connect.
 
@@ -237,7 +255,7 @@ __Examples__
 BleManager.enableBluetooth()
   .then(() => {
     // Success code
-    console.log('The bluetooh is already enabled or the user confirm');
+    console.log('The bluetooth is already enabled or the user confirm');
   })
   .catch((error) => {
     // Failure code
@@ -299,6 +317,9 @@ BleManager.read('XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX', 'XXXXXXXX-XXXX-XXXX-XXXX
   .then((readData) => {
     // Success code
     console.log('Read: ' + readData);
+
+    const buffer = Buffer.Buffer.from(readData);    //https://github.com/feross/buffer#convert-arraybuffer-to-buffer
+    const sensorData = buffer.readUInt8(1, true);
   })
   .catch((error) => {
     // Failure code
@@ -314,8 +335,24 @@ __Arguments__
 - `peripheralId` - `String` - the id/mac address of the peripheral.
 - `serviceUUID` - `String` - the UUID of the service.
 - `characteristicUUID` - `String` - the UUID of the characteristic.
-- `data` - `Array` - the data to write.
+- `data` - `Byte array` - the data to write.
 - `maxByteSize` - `Integer` - specify the max byte size before splitting message
+
+__Data preparation__
+
+If your data is not in byte array format you should convert it first. For strings you can use `convert-string` or other npm package in order to achieve that.
+Install the package first:
+```shell
+npm install convert-string
+```
+Then use it in your application:
+```js
+// Import/require in the beginning of the file
+import { stringToBytes } from 'convert-string';
+// Convert data to byte array before write/writeWithoutResponse
+const data = stringToBytes(yourStringData);
+```
+Feel free to use other packages or google how to convert into byte array if your data has other format.
 
 __Examples__
 ```js
@@ -338,11 +375,15 @@ __Arguments__
 - `peripheralId` - `String` - the id/mac address of the peripheral.
 - `serviceUUID` - `String` - the UUID of the service.
 - `characteristicUUID` - `String` - the UUID of the characteristic.
-- `data` - `Array` - the data to write.
+- `data` - `Byte array` - the data to write.
 - `maxByteSize` - `Integer` - (Optional) specify the max byte size
 - `queueSleepTime` - `Integer` - (Optional) specify the wait time before each write if the data is greater than maxByteSize
 
-__Examples__
+__Data preparation__
+
+If your data is not in byte array format check info for the write function above.
+
+__Example__
 ```js
 BleManager.writeWithoutResponse('XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX', 'XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX', 'XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX', data)
   .then(() => {
@@ -375,6 +416,51 @@ BleManager.readRSSI('XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX')
   });
 ```
 
+### requestConnectionPriority(peripheralId, connectionPriority) [Android only API 21+]
+Request a connection parameter update.
+Returns a `Promise` object.
+
+__Arguments__
+- `peripheralId` - `String` - the id/mac address of the peripheral.
+- `connectionPriority` - `Integer` - the connection priority to be requested, as follows:
+    - 0 - balanced priority connection
+    - 1 - high priority connection
+    - 2 - low power priority connection
+
+__Examples__
+```js
+BleManager.requestConnectionPriority('XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX', 1)
+.then((status) => {
+  // Success code
+  console.log('Requested connection priority');
+})
+.catch((error) => {
+  // Failure code
+  console.log(error);
+});
+```
+
+### requestMTU(peripheralId, mtu) [Android only API 21+]
+Request an MTU size used for a given connection.
+Returns a `Promise` object.
+
+__Arguments__
+- `peripheralId` - `String` - the id/mac address of the peripheral.
+- `mtu` - `Integer` - the MTU size to be requested in bytes.
+
+__Examples__
+```js
+BleManager.requestMTU('XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX', 512)
+.then((mtu) => {
+  // Success code
+  console.log('MTU size changed to ' + mtu + ' bytes');
+})
+.catch((error) => {
+  // Failure code
+  console.log(error);
+});
+```
+
 ### retrieveServices(peripheralId)
 Retrieve the peripheral's services and characteristics.
 Returns a `Promise` object.
@@ -390,6 +476,26 @@ BleManager.retrieveServices('XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX')
     console.log('Peripheral info:', peripheralInfo);
   });  
 ```
+
+### refreshCache(peripheralId) [Android only]
+refreshes the peripheral's services and characteristics cache
+Returns a `Promise` object.
+
+__Arguments__
+- `peripheralId` - `String` - the id/mac address of the peripheral.
+
+__Examples__
+```js
+BleManager.refreshCache('XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX')
+  .then((peripheralInfo) => {
+    // Success code
+    console.log('cache refreshed!')
+  })
+  .cache((error) => {
+    console.error(error)
+  }); 
+```
+
 
 ### getConnectedPeripherals(serviceUUIDs)
 Return the connected peripherals.
@@ -408,6 +514,53 @@ BleManager.getConnectedPeripherals([])
 
 ```
 
+### createBond(peripheralId) [Android only]
+Start the bonding (pairing) process with the remote device.
+Returns a `Promise` object. The promise is resolved when either `new bond successfully created` or `bond already existed`, otherwise it will be rejected.
+
+__Examples__
+```js
+BleManager.createBond(peripheralId)
+  .then(() => {
+    console.log('createBond success or there is already an existing one');
+  })
+  .catch(() => {
+    console.log('fail to bond');
+  })
+
+```
+
+### removeBond(peripheralId) [Android only]
+Remove a paired device.
+Returns a `Promise` object.
+
+__Examples__
+```js
+BleManager.removeBond(peripheralId)
+  .then(() => {
+    console.log('removeBond success');
+  })
+  .catch(() => {
+    console.log('fail to remove the bond');
+  })
+
+```
+
+
+### getBondedPeripherals() [Android only]
+Return the bonded peripherals.
+Returns a `Promise` object.
+
+__Examples__
+```js
+BleManager.getBondedPeripherals([])
+  .then((bondedPeripheralsArray) => {
+    // Each peripheral in returned array will have id and name properties
+    console.log('Bonded peripherals: ' + bondedPeripheralsArray.length);
+  });
+
+```
+
 ### getDiscoveredPeripherals()
 Return the discovered peripherals after a scan.
 Returns a `Promise` object.
@@ -422,7 +575,7 @@ BleManager.getDiscoveredPeripherals([])
 
 ```
 
-### removePeripheral(peripheralId)
+### removePeripheral(peripheralId) [Android only]
 Removes a disconnected peripheral from the cached list.
 It is useful if the device is turned off, because it will be re-discovered upon turning on again.
 Returns a `Promise` object.
@@ -510,9 +663,36 @@ bleManagerEmitter.addListener(
 A characteristic notify a new value.
 
 __Arguments__
-- `peripheral` - `String` - the id of the peripheral
-- `characteristic` - `String` - the UUID of the characteristic
-- `value` - `String` - the read value in Hex format
+- `value` — `Array` — the read value
+- `peripheral` — `String` — the id of the peripheral
+- `characteristic` — `String` — the UUID of the characteristic
+- `service` — `String` — the UUID of the characteristic
+
+> Event will only be emitted after successful `startNotification`.
+
+__Example__
+```js
+import { bytesToString } from 'convert-string';
+
+async function connectAndPrepare(peripheral, service, characteristic) {
+  // Connect to device
+  await BleManager.connect(peripheral);
+  // Before startNotification you need to call retrieveServices
+  await BleManager.retrieveServices(peripheral);
+  // To enable BleManagerDidUpdateValueForCharacteristic listener
+  await BleManager.startNotification(peripheral, service, characteristic);
+  // Add event listener
+  bleManagerEmitter.addListener(
+    'BleManagerDidUpdateValueForCharacteristic',
+    ({ value, peripheral, characteristic, service }) => {
+        // Convert bytes array to string
+        const data = bytesToString(value);
+        console.log(`Recieved ${data} for characteristic ${characteristic}`);
+    }
+  );
+  // Actions triggereng BleManagerDidUpdateValueForCharacteristic event
+}
+```
 
 ###  BleManagerConnectPeripheral
 A peripheral was connected.
