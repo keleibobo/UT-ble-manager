@@ -1,6 +1,6 @@
 {
   "name": "ut-ble-manager",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "A BLE module for react native.",
   "main": "BleManager",
   "repository": {
